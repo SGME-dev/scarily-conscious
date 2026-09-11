@@ -1,0 +1,34 @@
+[gd_scene format=3 uid="uid://d4k0ee0oh1xec"]
+
+[ext_resource type="Script" uid="uid://b3vx0xb7wta4w" path="res://fly_brain.gd" id="1_0pkgo"]
+[ext_resource type="Shader" uid="uid://c6xs3fb4slelk" path="res://fly_brain.gdshader" id="2_n6fmv"]
+[ext_resource type="Script" uid="uid://cdm6rso3hogro" path="res://OrbitCamera.gd" id="2_rsxj8"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_ivahv"]
+render_priority = 0
+shader = ExtResource("2_n6fmv")
+
+[sub_resource type="SphereMesh" id="SphereMesh_1ne2t"]
+material = SubResource("ShaderMaterial_ivahv")
+radius = 0.002
+height = 0.004
+
+[sub_resource type="MultiMesh" id="MultiMesh_0pkgo"]
+transform_format = 1
+use_colors = true
+mesh = SubResource("SphereMesh_1ne2t")
+
+[node name="FlyBrain" type="Node3D" unique_id=1618501884]
+script = ExtResource("1_0pkgo")
+
+[node name="MultiMeshInstance3D" type="MultiMeshInstance3D" parent="." unique_id=1229367715]
+multimesh = SubResource("MultiMesh_0pkgo")
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1457890068]
+current = true
+near = 0.001
+far = 100.0
+script = ExtResource("2_rsxj8")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1622956792]
+transform = Transform3D(1, 0, 0, 0, 0.7808449, 0.6247249, 0, -0.6247249, 0.7808449, 0, 5.102641, 6.4215975)
