@@ -1,0 +1,11 @@
+Model Information:
+* title:	Wildtype Virgin Female Drosophila Melanogaster
+* source:	https://sketchfab.com/3d-models/wildtype-virgin-female-drosophila-melanogaster-88485a6904174035bdaf18359a13324d
+* author:	mlykouretzos (https://sketchfab.com/mlykouretzos)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Wildtype Virgin Female Drosophila Melanogaster" (https://sketchfab.com/3d-models/wildtype-virgin-female-drosophila-melanogaster-88485a6904174035bdaf18359a13324d) by mlykouretzos (https://sketchfab.com/mlykouretzos) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

@@ -1,0 +1,43 @@
+[gd_scene format=3 uid="uid://bxr4r3053snuq"]
+
+[ext_resource type="Script" uid="uid://d2u04bbyvwusb" path="res://character_body_3d.gd" id="1_fb3t6"]
+[ext_resource type="PackedScene" uid="uid://bh0rtbna6dg0x" path="res://wildtype_virgin_female_drosophila_melanogaster/scene.gltf" id="2_fb3t6"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_bu0v1"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_iwpo4"]
+radius = 2.4331055
+height = 4.866211
+
+[node name="CharacterBody3D" type="CharacterBody3D" unique_id=843694659 node_paths=PackedStringArray("ray_left", "ray_center", "ray_right")]
+script = ExtResource("1_fb3t6")
+ray_left = NodePath("RayCast3D3")
+ray_center = NodePath("RayCast3D")
+ray_right = NodePath("RayCast3D2")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1676491246]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0)
+shape = SubResource("CapsuleShape3D_bu0v1")
+
+[node name="RayCast3D" type="RayCast3D" parent="." unique_id=1731713960]
+transform = Transform3D(-1, 1.509958e-07, 6.600236e-15, 0, -4.371139e-08, 1, 1.509958e-07, 1, 4.371139e-08, 0, 0, -0.8838548)
+
+[node name="RayCast3D2" type="RayCast3D" parent="." unique_id=521723711]
+transform = Transform3D(-4.371139e-08, -1, -4.371139e-08, 0, -4.371139e-08, 1, -1, 4.371139e-08, 1.9106855e-15, 0, 0, 0)
+
+[node name="RayCast3D3" type="RayCast3D" parent="." unique_id=327846210]
+transform = Transform3D(-4.371139e-08, 1, 4.371139e-08, 0, -4.371139e-08, 1, 1, 4.371139e-08, 1.9106855e-15, 0, 0, 0)
+
+[node name="Area3D" type="Area3D" parent="." unique_id=1841300560]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=820396648]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0)
+shape = SubResource("CapsuleShape3D_iwpo4")
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1595421556]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.13310355, -0.68235314)
+near = 0.001
+far = 100.0
+
+[node name="FlyMeshInstance3D" parent="." unique_id=1972806189 instance=ExtResource("2_fb3t6")]
+transform = Transform3D(-0.125, 0, -1.0927847e-08, 0, 0.125, 0, 1.0927847e-08, 0, -0.125, -0.3122104, 0, -0.55960625)
