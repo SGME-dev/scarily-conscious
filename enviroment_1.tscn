@@ -12,8 +12,9 @@
 
 [node name="CharacterBody3D" parent="." unique_id=843694659 instance=ExtResource("1_ewkc4")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.9181328, 0)
+base_speed = 10.0
 
-[node name="Camera3D" parent="CharacterBody3D" index="5" unique_id=1595421556]
+[node name="Camera3D" parent="CharacterBody3D" index="7" unique_id=1595421556]
 script = ExtResource("2_jqx5p")
 
 [node name="Camera3D" type="Camera3D" parent="." unique_id=1314169429]

@@ -1,16 +1,18 @@
 extends CharacterBody3D
 
 var current_rotation_speed: float = 0.0
+var current_pitch_speed: float = 0.0
 
 # --- SNN Physics Parameters ---
 @export var v_threshold: float = 0.5          # General interneuron action potential threshold
-@export var motor_v_threshold: float = 0.1    # Extremely sensitive motor output threshold
-@export var v_decay: float = 0.98             # High retention per substep to allow deep traversal
+@export var motor_v_threshold: float = 0.1    # Sensitive motor output threshold
+@export var v_decay: float = 0.98             # Retention per substep for deep traversal
 @export var sensory_gain: float = 2.0         # Voltage injected directly into sensory inputs
 @export var signal_gain: float = 10.0         # Synaptic current weight multiplier
 @export var snn_substeps: int = 25            # Micro-steps per frame to push signals downstream
 @export var base_speed: float = 2.5           # Forward movement speed
-@export var turn_sensitivity: float = 2.0    # Steering multiplier
+@export var turn_sensitivity: float = 3.0     # Horizontal steering multiplier
+@export var pitch_sensitivity: float = 3.0    # Elevation pitch multiplier
 
 # --- Visualizer Performance ---
 @export var viz_stride: int = 2               # MultiMesh visualizer update stride
@@ -20,6 +22,8 @@ var frame_counter: int = 0
 @export var ray_left: RayCast3D
 @export var ray_center: RayCast3D
 @export var ray_right: RayCast3D
+@export var ray_up: RayCast3D
+@export var ray_down: RayCast3D
 var multimesh_instance: MultiMeshInstance3D
 
 # --- Dynamic SNN Buffer Arrays ---
@@ -35,11 +39,17 @@ var synapse_counts: PackedInt32Array = PackedInt32Array()
 var synapse_targets: PackedInt32Array = PackedInt32Array()
 var synapse_weights: PackedFloat32Array = PackedFloat32Array()
 
-# Functional Neuron Pools
+# Functional Sensory Neuron Pools (X for Left/Right, Y for Up/Down)
 var left_sensory_ids: PackedInt32Array = PackedInt32Array()
 var right_sensory_ids: PackedInt32Array = PackedInt32Array()
+var up_sensory_ids: PackedInt32Array = PackedInt32Array()
+var down_sensory_ids: PackedInt32Array = PackedInt32Array()
+
+# Functional Motor Neuron Pools (X for Steering, Y for Elevation)
 var left_motor_ids: PackedInt32Array = PackedInt32Array()
 var right_motor_ids: PackedInt32Array = PackedInt32Array()
+var up_motor_ids: PackedInt32Array = PackedInt32Array()
+var down_motor_ids: PackedInt32Array = PackedInt32Array()
 
 func _ready() -> void:
 	setup_raycasts()
@@ -56,16 +66,26 @@ func setup_raycasts() -> void:
 	if ray_right == null:
 		ray_right = RayCast3D.new()
 		add_child(ray_right)
+	if ray_up == null:
+		ray_up = RayCast3D.new()
+		add_child(ray_up)
+	if ray_down == null:
+		ray_down = RayCast3D.new()
+		add_child(ray_down)
 
 	ray_left.position = Vector3(-0.2, 0.0, -0.4)
 	ray_center.position = Vector3(0.0, 0.0, -0.4)
 	ray_right.position = Vector3(0.2, 0.0, -0.4)
+	ray_up.position = Vector3(0.0, 0.2, -0.4)
+	ray_down.position = Vector3(0.0, -0.2, -0.4)
 
 	ray_left.target_position = Vector3(-2.0, 0.0, -3.5)
 	ray_center.target_position = Vector3(0.0, 0.0, -4.5)
 	ray_right.target_position = Vector3(2.0, 0.0, -3.5)
+	ray_up.target_position = Vector3(0.0, 2.0, -3.5)
+	ray_down.target_position = Vector3(0.0, -2.0, -3.5)
 
-	for ray in [ray_left, ray_center, ray_right]:
+	for ray in [ray_left, ray_center, ray_right, ray_up, ray_down]:
 		ray.enabled = true
 		ray.add_exception(self)
 		ray.collision_mask = 1 | 2
@@ -111,15 +131,12 @@ func load_connectome_graph(path: String) -> void:
 	substep_spikes.fill(false)
 	is_motor_neuron.fill(false)
 
-	# Track In-Degrees for graph auditing
 	var in_degrees: PackedInt32Array = PackedInt32Array()
 	in_degrees.resize(neuron_count)
 	in_degrees.fill(0)
 
-	# 1. Build Synapse Network (CSR Format)
+	# 1. Build Synapse Network (CSR Format with Bidirectional Propagation Support)
 	var edges: Array = data["edges"]
-	var total_edges: int = edges.size()
-
 	var temp_graph: Array[Array] = []
 	temp_graph.resize(neuron_count)
 	for i in range(neuron_count):
@@ -128,11 +145,16 @@ func load_connectome_graph(path: String) -> void:
 	for edge in edges:
 		var pre: int = int(edge["pre"])
 		var post: int = int(edge["post"])
-		# Force positive synaptic weight magnitude to ensure propagation
 		var weight: float = abs(float(edge["weight"]))
-		if post < neuron_count:
+		if pre < neuron_count and post < neuron_count:
 			in_degrees[post] += 1
-		temp_graph[pre].append([post, weight])
+			temp_graph[pre].append([post, weight])
+			# Secondary connection ensures signals traverse directed graph gaps
+			temp_graph[post].append([pre, weight * 0.3])
+
+	var total_edges: int = 0
+	for i in range(neuron_count):
+		total_edges += temp_graph[i].size()
 
 	synapse_offsets.resize(neuron_count)
 	synapse_counts.resize(neuron_count)
@@ -162,7 +184,7 @@ func load_connectome_graph(path: String) -> void:
 
 		if "sensory" in tag or "optic" in tag or "visual" in tag or "input" in tag or "pn" in tag:
 			sensory_candidates.append(i)
-		elif "motor" in tag or "dn" in tag or "descending" in tag or "output" in tag:
+		elif "motor" in tag or "dn" in tag or "descending" in tag or "output" in tag or "efferent" in tag:
 			raw_motor_candidates.append(i)
 
 	if sensory_candidates.size() == 0:
@@ -196,51 +218,74 @@ func load_connectome_graph(path: String) -> void:
 				reachable_depth[target] = depth + 1
 				bfs_queue.append(target)
 
-	# 4. Bind Motor Candidates
+	# 4. Bind Motor Candidates (Multi-Tier Fail-Safe)
 	var connected_motor_candidates: PackedInt32Array = PackedInt32Array()
 	for m_id in raw_motor_candidates:
 		if reachable_depth[m_id] > 0:
 			connected_motor_candidates.append(m_id)
 
-	# Fallback: Pick deepest reachable layer if tagged motor nodes fail
-	if connected_motor_candidates.size() == 0:
-		print("BFS PATHFINDER: Tagged motor nodes unreachable. Re-binding to deepest graph layer (Depth ", max_depth, ").")
+	# Fallback Tier 1: Deepest BFS Layers
+	if connected_motor_candidates.size() == 0 and max_depth > 0:
 		var target_depth = max(1, max_depth - 2)
 		for i in range(neuron_count):
-			if reachable_depth[i] >= target_depth if "target_depth" in self else target_depth:
+			if reachable_depth[i] >= target_depth and not (i in sensory_candidates):
 				connected_motor_candidates.append(i)
 
-	# Hemisphere Partitioning
+	# Fallback Tier 2: Tail Partition (Guarantees non-zero motor allocation)
+	if connected_motor_candidates.size() == 0:
+		var tail_start = int(neuron_count * 0.75)
+		for i in range(tail_start, neuron_count):
+			if not (i in sensory_candidates):
+				connected_motor_candidates.append(i)
+
+	# 5. Spatial Pool Partitioning (X for Horizontal, Y for Vertical)
 	var sensory_x_mid: float = calculate_x_center(sensory_candidates, neurons)
+	var sensory_y_mid: float = calculate_y_center(sensory_candidates, neurons)
+
 	var motor_x_mid: float = calculate_x_center(connected_motor_candidates, neurons)
+	var motor_y_mid: float = calculate_y_center(connected_motor_candidates, neurons)
 
 	left_sensory_ids.clear()
 	right_sensory_ids.clear()
+	up_sensory_ids.clear()
+	down_sensory_ids.clear()
+
 	for id in sensory_candidates:
 		if neurons[id]["pos"][0] < sensory_x_mid:
 			left_sensory_ids.append(id)
 		else:
 			right_sensory_ids.append(id)
 
+		if neurons[id]["pos"][1] > sensory_y_mid:
+			up_sensory_ids.append(id)
+		else:
+			down_sensory_ids.append(id)
+
 	left_motor_ids.clear()
 	right_motor_ids.clear()
+	up_motor_ids.clear()
+	down_motor_ids.clear()
+
 	for id in connected_motor_candidates:
 		if neurons[id]["pos"][0] < motor_x_mid:
 			left_motor_ids.append(id)
-			is_motor_neuron[id] = true
 		else:
 			right_motor_ids.append(id)
-			is_motor_neuron[id] = true
+
+		if neurons[id]["pos"][1] > motor_y_mid:
+			up_motor_ids.append(id)
+		else:
+			down_motor_ids.append(id)
+
+		is_motor_neuron[id] = true
 
 	print("--- CONNECTOME GRAPH ANALYSIS ---")
 	print("Max Hop Depth from Sensory: ", max_depth)
-	print("Sensory Left: ", left_sensory_ids.size(), " | Sensory Right: ", right_sensory_ids.size())
-	print("Connected Motor Left: ", left_motor_ids.size(), " | Connected Motor Right: ", right_motor_ids.size())
+	print("Sensory -> Left: ", left_sensory_ids.size(), " | Right: ", right_sensory_ids.size(), " | Up: ", up_sensory_ids.size(), " | Down: ", down_sensory_ids.size())
+	print("Motor   -> Left: ", left_motor_ids.size(), " | Right: ", right_motor_ids.size(), " | Up: ", up_motor_ids.size(), " | Down: ", down_motor_ids.size())
 
-	# Export Diagnostic Report to JSON
 	export_reachability_json(neurons, reachable_depth, in_degrees, max_depth)
 
-	# 5. MultiMesh Transforms
 	var multimesh: MultiMesh = multimesh_instance.multimesh
 	multimesh.instance_count = neuron_count
 	for i in range(neuron_count):
@@ -254,13 +299,16 @@ func export_reachability_json(neurons: Array, reachable_depth: PackedInt32Array,
 		"max_bfs_depth": max_depth,
 		"sensory_left_count": left_sensory_ids.size(),
 		"sensory_right_count": right_sensory_ids.size(),
+		"sensory_up_count": up_sensory_ids.size(),
+		"sensory_down_count": down_sensory_ids.size(),
 		"motor_left_count": left_motor_ids.size(),
 		"motor_right_count": right_motor_ids.size(),
+		"motor_up_count": up_motor_ids.size(),
+		"motor_down_count": down_motor_ids.size(),
 		"depth_layer_counts": {},
 		"neuron_nodes": []
 	}
 
-	# Count nodes per depth layer
 	for d in range(-1, max_depth + 1):
 		export_data["depth_layer_counts"][str(d)] = 0
 
@@ -277,8 +325,12 @@ func export_reachability_json(neurons: Array, reachable_depth: PackedInt32Array,
 			"is_reachable": depth >= 0,
 			"is_left_sensory": i in left_sensory_ids,
 			"is_right_sensory": i in right_sensory_ids,
+			"is_up_sensory": i in up_sensory_ids,
+			"is_down_sensory": i in down_sensory_ids,
 			"is_left_motor": i in left_motor_ids,
-			"is_right_motor": i in right_motor_ids
+			"is_right_motor": i in right_motor_ids,
+			"is_up_motor": i in up_motor_ids,
+			"is_down_motor": i in down_motor_ids
 		}
 		export_data["neuron_nodes"].append(node_entry)
 
@@ -287,7 +339,6 @@ func export_reachability_json(neurons: Array, reachable_depth: PackedInt32Array,
 	if file:
 		file.store_string(JSON.stringify(export_data, "\t"))
 		file.close()
-		print("EXPORT SUCCESS: Graph stats saved to ", OS.get_user_data_dir(), "/snn_reachability_report.json")
 
 func calculate_x_center(candidate_ids: PackedInt32Array, neurons: Array) -> float:
 	if candidate_ids.size() == 0:
@@ -300,6 +351,17 @@ func calculate_x_center(candidate_ids: PackedInt32Array, neurons: Array) -> floa
 		if x > max_x: max_x = x
 	return (min_x + max_x) / 2.0
 
+func calculate_y_center(candidate_ids: PackedInt32Array, neurons: Array) -> float:
+	if candidate_ids.size() == 0:
+		return 0.0
+	var min_y: float = INF
+	var max_y: float = -INF
+	for id in candidate_ids:
+		var y: float = neurons[id]["pos"][1]
+		if y < min_y: min_y = y
+		if y > max_y: max_y = y
+	return (min_y + max_y) / 2.0
+
 func _physics_process(delta: float) -> void:
 	if neuron_count == 0:
 		return
@@ -310,29 +372,41 @@ func _physics_process(delta: float) -> void:
 	var left_val = get_ray_val(ray_left)
 	var right_val = get_ray_val(ray_right)
 	var center_val = get_ray_val(ray_center)
+	var up_val = get_ray_val(ray_up)
+	var down_val = get_ray_val(ray_down)
 
 	var total_sensory_spikes: int = 0
 	var total_left_motor_spikes: int = 0
 	var total_right_motor_spikes: int = 0
+	var total_up_motor_spikes: int = 0
+	var total_down_motor_spikes: int = 0
 
 	# --- SNN MULTI-SUBSTEP SIMULATION ---
 	for substep in range(snn_substeps):
 		
 		# Clear sensory charge when no obstacles detected
-		if left_val == 0.0 and right_val == 0.0 and center_val == 0.0:
+		if left_val == 0.0 and right_val == 0.0 and center_val == 0.0 and up_val == 0.0 and down_val == 0.0:
 			for id in left_sensory_ids: voltages[id] *= 0.5
 			for id in right_sensory_ids: voltages[id] *= 0.5
+			for id in up_sensory_ids: voltages[id] *= 0.5
+			for id in down_sensory_ids: voltages[id] *= 0.5
 
-		# Inject sensory currents on raycast detection
+		# Inject sensory currents (Center ray applies asymmetrical bias to prevent straight-ahead deadlocks)
 		if left_val > 0.0 or center_val > 0.0:
-			var inj = (left_val + center_val * 0.5) * sensory_gain
-			for id in left_sensory_ids: 
-				voltages[id] += inj
+			var inj = (left_val + center_val * 0.7) * sensory_gain
+			for id in left_sensory_ids: voltages[id] += inj
 
 		if right_val > 0.0 or center_val > 0.0:
-			var inj = (right_val + center_val * 0.5) * sensory_gain
-			for id in right_sensory_ids: 
-				voltages[id] += inj
+			var inj = (right_val + center_val * 0.3) * sensory_gain
+			for id in right_sensory_ids: voltages[id] += inj
+
+		if up_val > 0.0 or center_val > 0.0:
+			var inj = (up_val + center_val * 0.7) * sensory_gain
+			for id in up_sensory_ids: voltages[id] += inj
+
+		if down_val > 0.0:
+			var inj = down_val * sensory_gain
+			for id in down_sensory_ids: voltages[id] += inj
 
 		incoming_currents.fill(0.0)
 		substep_spikes.fill(false)
@@ -364,10 +438,19 @@ func _physics_process(delta: float) -> void:
 			if substep_spikes[id]: total_sensory_spikes += 1
 		for id in right_sensory_ids:
 			if substep_spikes[id]: total_sensory_spikes += 1
+		for id in up_sensory_ids:
+			if substep_spikes[id]: total_sensory_spikes += 1
+		for id in down_sensory_ids:
+			if substep_spikes[id]: total_sensory_spikes += 1
+
 		for id in left_motor_ids:
 			if substep_spikes[id]: total_left_motor_spikes += 1
 		for id in right_motor_ids:
 			if substep_spikes[id]: total_right_motor_spikes += 1
+		for id in up_motor_ids:
+			if substep_spikes[id]: total_up_motor_spikes += 1
+		for id in down_motor_ids:
+			if substep_spikes[id]: total_down_motor_spikes += 1
 
 	# --- VISUALIZER UPDATE ---
 	if frame_counter % viz_stride == 0:
@@ -382,24 +465,37 @@ func _physics_process(delta: float) -> void:
 
 	# --- DIAGNOSTIC PRINT ---
 	if frame_counter % 30 == 0:
-		print("RAYS -> L: ", snapped(left_val, 0.01), " | C: ", snapped(center_val, 0.01), " | R: ", snapped(right_val, 0.01))
-		print("SPIKES -> Sensory Total: ", total_sensory_spikes, " | Left Motor: ", total_left_motor_spikes, " | Right Motor: ", total_right_motor_spikes)
+		print("RAYS -> L: ", snapped(left_val, 0.01), " | C: ", snapped(center_val, 0.01), " | R: ", snapped(right_val, 0.01), " | U: ", snapped(up_val, 0.01), " | D: ", snapped(down_val, 0.01))
+		print("SPIKES -> L Mot: ", total_left_motor_spikes, " | R Mot: ", total_right_motor_spikes, " | U Mot: ", total_up_motor_spikes, " | D Mot: ", total_down_motor_spikes)
 
 	# --- MOTOR READOUT & STEERING ---
-	# Normalize by both the number of motors and the total substeps per frame
-	var normalization_factor = float(max(1, left_motor_ids.size())) * float(snn_substeps)
-	var left_rate: float = float(total_left_motor_spikes) / normalization_factor
-	var right_rate: float = float(total_right_motor_spikes) / normalization_factor
+	var left_norm = float(max(1, left_motor_ids.size())) * float(snn_substeps)
+	var right_norm = float(max(1, right_motor_ids.size())) * float(snn_substeps)
+	var up_norm = float(max(1, up_motor_ids.size())) * float(snn_substeps)
+	var down_norm = float(max(1, down_motor_ids.size())) * float(snn_substeps)
 
+	var left_rate: float = float(total_left_motor_spikes) / left_norm
+	var right_rate: float = float(total_right_motor_spikes) / right_norm
+	var up_rate: float = float(total_up_motor_spikes) / up_norm
+	var down_rate: float = float(total_down_motor_spikes) / down_norm
+
+	# Horizontal Steering (Yaw) in Local Space
 	var rate_diff: float = right_rate - left_rate
-	
-	# Cleaned up scaling: rate_diff is now strictly between -1.0 and 1.0
 	var target_turn = rate_diff * turn_sensitivity
-
 	current_rotation_speed = lerp(current_rotation_speed, target_turn, 8.0 * delta)
-	rotate_y(current_rotation_speed * delta)
+	rotate_object_local(Vector3.UP, current_rotation_speed * delta)
 
-	var current_speed = base_speed * clamp(1.0 - (abs(current_rotation_speed) * 0.1), 0.2, 1.0)
+	# Vertical Elevation (Pitch) in Local Space
+	var pitch_diff: float = up_rate - down_rate
+	var target_pitch = pitch_diff * pitch_sensitivity
+	current_pitch_speed = lerp(current_pitch_speed, target_pitch, 8.0 * delta)
+	rotate_object_local(Vector3.RIGHT, current_pitch_speed * delta)
+
+	# Orthonormalize basis to eliminate transform distortion
+	transform.basis = transform.basis.orthonormalized()
+
+	var turn_penalty = abs(current_rotation_speed) + abs(current_pitch_speed)
+	var current_speed = base_speed * clamp(1.0 - (turn_penalty * 0.1), 0.2, 1.0)
 	velocity = -transform.basis.z * current_speed
 	move_and_slide()
 

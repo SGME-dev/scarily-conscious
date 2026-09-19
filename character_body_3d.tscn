@@ -9,11 +9,13 @@
 radius = 2.4331055
 height = 4.866211
 
-[node name="CharacterBody3D" type="CharacterBody3D" unique_id=843694659 node_paths=PackedStringArray("ray_left", "ray_center", "ray_right")]
+[node name="CharacterBody3D" type="CharacterBody3D" unique_id=843694659 node_paths=PackedStringArray("ray_left", "ray_center", "ray_right", "ray_up", "ray_down")]
 script = ExtResource("1_fb3t6")
 ray_left = NodePath("RayCast3D3")
 ray_center = NodePath("RayCast3D")
 ray_right = NodePath("RayCast3D2")
+ray_up = NodePath("RayCast3D5")
+ray_down = NodePath("RayCast3D6")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1676491246]
 transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0)
@@ -27,6 +29,12 @@ transform = Transform3D(-4.371139e-08, -1, -4.371139e-08, 0, -4.371139e-08, 1, -
 
 [node name="RayCast3D3" type="RayCast3D" parent="." unique_id=327846210]
 transform = Transform3D(-4.371139e-08, 1, 4.371139e-08, 0, -4.371139e-08, 1, 1, 4.371139e-08, 1.9106855e-15, -2, 0, -4)
+
+[node name="RayCast3D5" type="RayCast3D" parent="." unique_id=925616931]
+transform = Transform3D(-1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0, 1, 0, 1, -4)
+
+[node name="RayCast3D6" type="RayCast3D" parent="." unique_id=1193693044]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1, -4)
 
 [node name="Area3D" type="Area3D" parent="." unique_id=1841300560]
 
